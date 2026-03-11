@@ -108,7 +108,10 @@ class GitStorage(object):
                 raise StorageNotFound
             return content
         try:
-            with open(os.path.join(self.path, filename), mode=mode) as f:
+            encoding = None if "b" in mode else "utf-8"
+            with open(
+                os.path.join(self.path, filename), mode=mode, encoding=encoding
+            ) as f:
                 content = f.read(size)
         except (IOError, FileNotFoundError):
             raise StorageNotFound("{} not found.".format(filename))
@@ -321,7 +324,10 @@ class GitStorage(object):
                 os.path.join(self.path, dirname), mode=0o775, exist_ok=True
             )
         # store file on filesystem
-        with open(os.path.join(self.path, filename), mode) as f:
+        encoding = None if "b" in mode else "utf-8"
+        with open(
+            os.path.join(self.path, filename), mode, encoding=encoding
+        ) as f:
             f.write(content)
         # check if file has changed
         diff = self.repo.index.diff(None, paths=filename)
