@@ -165,6 +165,11 @@ def get_filename(pagepath):
     p = pagepath if app.config["RETAIN_PAGE_NAME_CASE"] else pagepath.lower()
     p = clean_slashes(p)
 
+    # When underscore-as-space is enabled, normalize spaces to underscores
+    # so that files are stored with underscores on disk.
+    if app.config.get("TREAT_UNDERSCORE_AS_SPACE_FOR_TITLES", False):
+        p = p.replace(" ", "_")
+
     if not p.endswith(".md"):
         return "{}.md".format(p)
 

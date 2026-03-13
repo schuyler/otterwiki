@@ -615,6 +615,11 @@ class mistunePluginWikiLink:
         if len(link_p.fragment):
             link = link_p._replace(fragment=slugify(link_p.fragment)).geturl()
 
+        # When underscore-as-space is enabled, normalize spaces to underscores
+        # in link targets so URLs are clean and match the on-disk filenames.
+        config = inline.env.get("config", {})
+        if config.get("TREAT_UNDERSCORE_AS_SPACE_FOR_TITLES", False):
+            link = link.replace(" ", "_")
         # quote link (and just in case someone encoded already: unquote)
         link = urllib.parse.quote(urllib.parse.unquote(link), safe="/#")
         # store env for later use in render

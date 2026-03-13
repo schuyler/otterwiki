@@ -51,6 +51,24 @@ def platform_mode_disabled(f):
     return decorated_function
 
 
+@app.before_request
+def _normalize_spaces_to_underscores():
+    """When TREAT_UNDERSCORE_AS_SPACE_FOR_TITLES is enabled, redirect any
+    URL containing spaces to the underscore equivalent so that URLs are
+    clean and canonical across all page routes."""
+    if not app.config.get("TREAT_UNDERSCORE_AS_SPACE_FOR_TITLES", False):
+        return None
+    if request.method != "GET":
+        return None
+    path = request.path
+    if " " in path:
+        normalized = path.replace(" ", "_")
+        if request.query_string:
+            normalized += "?" + request.query_string.decode("utf-8")
+        return redirect(normalized, code=302)
+    return None
+
+
 #
 # technical views/routes/redirects
 #
