@@ -3,9 +3,9 @@
 Tests for otterwiki.lambda_handler
 
 Tests that:
-- The module imports without error whether Mangum is installed or not
-- The handler wraps the Flask app correctly when Mangum is available
-- The handler raises RuntimeError when Mangum is not installed
+- The module imports without error whether apig-wsgi is installed or not
+- The handler wraps the Flask app correctly when apig-wsgi is available
+- The handler raises RuntimeError when apig-wsgi is not installed
 - Otterwiki initializes correctly through the handler path
 """
 
@@ -45,11 +45,11 @@ def configured_env(tmpdir):
     }
 
 
-def test_import_without_mangum(configured_env):
-    """When Mangum is not installed, the module should still import."""
-    # Temporarily hide mangum from the import system
-    original = sys.modules.get("mangum")
-    sys.modules["mangum"] = None  # type: ignore[assignment]
+def test_import_without_apig_wsgi(configured_env):
+    """When apig-wsgi is not installed, the module should still import."""
+    # Temporarily hide apig_wsgi from the import system
+    original = sys.modules.get("apig_wsgi")
+    sys.modules["apig_wsgi"] = None  # type: ignore[assignment]
     try:
         # Force reimport
         if "otterwiki.lambda_handler" in sys.modules:
@@ -59,28 +59,30 @@ def test_import_without_mangum(configured_env):
         importlib.reload(otterwiki.lambda_handler)
 
         # Handler should exist but raise RuntimeError
-        with pytest.raises(RuntimeError, match="Mangum is not installed"):
+        with pytest.raises(RuntimeError, match="apig-wsgi is not installed"):
             otterwiki.lambda_handler.handler({}, None)
     finally:
         if original is not None:
-            sys.modules["mangum"] = original
+            sys.modules["apig_wsgi"] = original
         else:
-            sys.modules.pop("mangum", None)
+            sys.modules.pop("apig_wsgi", None)
         # Clean up
         if "otterwiki.lambda_handler" in sys.modules:
             del sys.modules["otterwiki.lambda_handler"]
 
 
-def test_import_with_mangum_mock(configured_env):
-    """When Mangum is installed, handler should be a Mangum instance."""
-    # Create a mock mangum module
-    mock_mangum_module = types.ModuleType("mangum")
-    mock_mangum_cls = mock.MagicMock(name="Mangum")
-    mock_mangum_cls.return_value = mock.MagicMock(name="mangum_handler")
-    mock_mangum_module.Mangum = mock_mangum_cls  # type: ignore[attr-defined]
+def test_import_with_apig_wsgi_mock(configured_env):
+    """When apig-wsgi is installed, handler should be created via make_lambda_handler."""
+    # Create a mock apig_wsgi module
+    mock_apig_wsgi_module = types.ModuleType("apig_wsgi")
+    mock_handler = mock.MagicMock(name="lambda_handler")
+    mock_make = mock.MagicMock(
+        name="make_lambda_handler", return_value=mock_handler
+    )
+    mock_apig_wsgi_module.make_lambda_handler = mock_make  # type: ignore[attr-defined]
 
-    original = sys.modules.get("mangum")
-    sys.modules["mangum"] = mock_mangum_module
+    original = sys.modules.get("apig_wsgi")
+    sys.modules["apig_wsgi"] = mock_apig_wsgi_module
     try:
         if "otterwiki.lambda_handler" in sys.modules:
             del sys.modules["otterwiki.lambda_handler"]
@@ -88,42 +90,40 @@ def test_import_with_mangum_mock(configured_env):
 
         importlib.reload(otterwiki.lambda_handler)
 
-        # Mangum should have been called with the Flask app
+        # make_lambda_handler should have been called with the Flask app
         # (may be called more than once due to import + reload)
-        assert mock_mangum_cls.call_count >= 1
-        call_args = mock_mangum_cls.call_args
+        assert mock_make.call_count >= 1
+        call_args = mock_make.call_args
         # First positional arg should be the Flask app
         from otterwiki.server import app
 
         assert call_args[0][0] is app
-        assert call_args[1]["lifespan"] == "off"
     finally:
         if original is not None:
-            sys.modules["mangum"] = original
+            sys.modules["apig_wsgi"] = original
         else:
-            sys.modules.pop("mangum", None)
+            sys.modules.pop("apig_wsgi", None)
         if "otterwiki.lambda_handler" in sys.modules:
             del sys.modules["otterwiki.lambda_handler"]
 
 
-def test_handler_invocation_with_mangum(configured_env):
+def test_handler_invocation_with_apig_wsgi(configured_env):
     """Test that the handler can be invoked with a mock Lambda event."""
-    # Install mangum for real if available, otherwise use mock
-    mock_mangum_module = types.ModuleType("mangum")
+    mock_apig_wsgi_module = types.ModuleType("apig_wsgi")
 
     call_log = []
 
-    def fake_mangum(app, **kwargs):
+    def fake_make_lambda_handler(app):
         def fake_handler(event, context):
             call_log.append((event, context))
             return {"statusCode": 200, "body": "ok"}
 
         return fake_handler
 
-    mock_mangum_module.Mangum = fake_mangum  # type: ignore[attr-defined]
+    mock_apig_wsgi_module.make_lambda_handler = fake_make_lambda_handler  # type: ignore[attr-defined]
 
-    original = sys.modules.get("mangum")
-    sys.modules["mangum"] = mock_mangum_module
+    original = sys.modules.get("apig_wsgi")
+    sys.modules["apig_wsgi"] = mock_apig_wsgi_module
     try:
         if "otterwiki.lambda_handler" in sys.modules:
             del sys.modules["otterwiki.lambda_handler"]
@@ -140,9 +140,9 @@ def test_handler_invocation_with_mangum(configured_env):
         assert call_log[0][0] is event
     finally:
         if original is not None:
-            sys.modules["mangum"] = original
+            sys.modules["apig_wsgi"] = original
         else:
-            sys.modules.pop("mangum", None)
+            sys.modules.pop("apig_wsgi", None)
         if "otterwiki.lambda_handler" in sys.modules:
             del sys.modules["otterwiki.lambda_handler"]
 

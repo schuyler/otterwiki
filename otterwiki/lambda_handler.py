@@ -2,11 +2,11 @@
 """
 otterwiki.lambda_handler
 
-AWS Lambda handler for Otterwiki using Mangum.
+AWS Lambda handler for Otterwiki using apig-wsgi.
 
-Mangum adapts WSGI/ASGI applications for AWS Lambda behind API Gateway
-or ALB. This module provides the Lambda entry point while keeping
-Otterwiki's existing Flask initialization path unchanged.
+apig-wsgi adapts WSGI applications (like Flask) for AWS Lambda behind
+API Gateway or ALB. This module provides the Lambda entry point while
+keeping Otterwiki's existing Flask initialization path unchanged.
 
 Usage:
     Set the Lambda handler to: otterwiki.lambda_handler.handler
@@ -15,8 +15,6 @@ Configuration:
     All standard Otterwiki configuration applies. Set OTTERWIKI_SETTINGS
     to point to a config file on EFS, or configure via environment
     variables (REPOSITORY, SECRET_KEY, SQLALCHEMY_DATABASE_URI, etc.).
-
-    MANGUM_LOG_LEVEL: Set Mangum's log level (default: "WARNING").
 
 EFS requirements:
     The following must reside on a persistent filesystem (EFS):
@@ -36,27 +34,26 @@ EFS requirements:
     require no server-side storage.
 """
 
-import os
 import logging
 
 try:
-    from mangum import Mangum
+    from apig_wsgi import make_lambda_handler
 except ImportError:
-    Mangum = None  # type: ignore[assignment,misc]
+    make_lambda_handler = None  # type: ignore[assignment,misc]
 
 logger = logging.getLogger(__name__)
 
-# Only build the handler if Mangum is available. This allows the module
-# to be imported safely in environments where Mangum is not installed,
+# Only build the handler if apig-wsgi is available. This allows the module
+# to be imported safely in environments where apig-wsgi is not installed,
 # which is important because pyproject.toml lists it as optional.
-if Mangum is not None:
+if make_lambda_handler is not None:
     from otterwiki.server import app
 
-    log_level = os.environ.get("MANGUM_LOG_LEVEL", "WARNING")
-    handler = Mangum(app, lifespan="off", log_level=log_level)
+    handler = make_lambda_handler(app)
 else:
 
     def handler(event, context):  # type: ignore[misc]
         raise RuntimeError(
-            "Mangum is not installed. Install it with: pip install mangum"
+            "apig-wsgi is not installed. Install it with: "
+            "pip install apig-wsgi"
         )
