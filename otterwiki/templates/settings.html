@@ -34,6 +34,7 @@
     </span>
     Content and Editing
 </a>
+{% if not config.PLATFORM_MODE %}
 <a href="{{ url_for("admin_repository_management") }}" class="sidebar-link sidebar-link-with-icon">
     <span class="sidebar-icon" style="min-width: 3rem;">
         <i class="fas fa-code-branch"></i>
@@ -58,6 +59,7 @@
     </span>
     Mail Preferences
 </a>
+{% endif %}
 {% endif %}
 {% endblock %}
 {% block content %}

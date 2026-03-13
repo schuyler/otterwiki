@@ -73,6 +73,7 @@ app.config.update(
     HOME_PAGE="",
     RENDERER_HTML_WHITELIST="",
     ADMIN_USER_EMAIL="",
+    PLATFORM_MODE=False,
 )
 app.config.from_envvar("OTTERWIKI_SETTINGS", silent=True)
 

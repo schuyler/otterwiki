@@ -36,6 +36,19 @@ from otterwiki.version import __version__
 from otterwiki.util import sanitize_pagename
 
 from flask_login import login_required
+from functools import wraps
+
+
+def platform_mode_disabled(f):
+    """Decorator that returns 404 for routes disabled in platform mode."""
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if app.config.get("PLATFORM_MODE"):
+            abort(404)
+        return f(*args, **kwargs)
+
+    return decorated_function
 
 
 #
@@ -184,6 +197,7 @@ def housekeeping():
     "/-/admin/user_management", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required
+@platform_mode_disabled
 def admin_user_management():
     if request.method == "GET":
         return otterwiki.preferences.user_management_form()
@@ -206,6 +220,7 @@ def admin_sidebar_preferences():
     "/-/admin/permissions_and_registration", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required
+@platform_mode_disabled
 def admin_permissions_and_registration():
     if request.method == "GET":
         return otterwiki.preferences.permissions_and_registration_form()
@@ -230,6 +245,7 @@ def admin_content_and_editing():
     "/-/admin/repository_management", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required
+@platform_mode_disabled
 def admin_repository_management():
     if request.method == "GET":
         return otterwiki.preferences.repository_management_form()
@@ -241,6 +257,7 @@ def admin_repository_management():
     "/-/admin/mail_preferences", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required
+@platform_mode_disabled
 def admin_mail_preferences():
     if request.method == "GET":
         return otterwiki.preferences.mail_preferences_form()
@@ -262,6 +279,7 @@ def admin():
 @app.route("/-/user/", methods=["POST", "GET"])
 @app.route("/-/user/<string:uid>", methods=["POST", "GET"])
 @login_required
+@platform_mode_disabled
 def user(uid=None):
     if request.method == "GET":
         return otterwiki.preferences.user_edit_form(uid)
