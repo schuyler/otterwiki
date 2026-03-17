@@ -272,3 +272,151 @@ class TestProxyHeaderAuthUserManagement:
         auth = ProxyHeaderAuth()
         features = auth.supported_features()
         assert features["editing"] is True
+
+
+class TestRoleDisplayMapping:
+    """Role display mapping in PLATFORM_MODE (Phase 2 Unit 4)."""
+
+    def test_user_management_shows_role_column_in_platform_mode(
+        self, app_with_user, admin_client
+    ):
+        """User management table should show a Role column in PLATFORM_MODE."""
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            rv = admin_client.get("/-/admin/user_management")
+            assert rv.status_code == 200
+            soup = BeautifulSoup(rv.data.decode(), "html.parser")
+            headers = [th.get_text(strip=True) for th in soup.find_all("th")]
+            assert "Role" in headers
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_user_edit_shows_role_dropdown_in_platform_mode(
+        self, app_with_user, admin_client
+    ):
+        """User edit form should show a role <select> in PLATFORM_MODE."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            user = UserModel.query.filter_by(email="another@user.org").first()
+            assert user is not None
+            rv = admin_client.get(f"/-/user/{user.id}")
+            assert rv.status_code == 200
+            soup = BeautifulSoup(rv.data.decode(), "html.parser")
+            role_select = soup.find("select", {"name": "role"})
+            assert role_select is not None
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_set_role_admin_sets_correct_flags(
+        self, app_with_user, admin_client
+    ):
+        """POST with role=admin should set is_admin=True and all permissions True."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            user = UserModel.query.filter_by(email="another@user.org").first()
+            assert user is not None
+            rv = admin_client.post(
+                f"/-/user/{user.id}",
+                data={
+                    "name": user.name,
+                    "email": user.email,
+                    "role": "admin",
+                },
+                follow_redirects=True,
+            )
+            assert rv.status_code == 200
+            updated = UserModel.query.filter_by(
+                email="another@user.org"
+            ).first()
+            assert updated.is_admin is True
+            assert updated.is_approved is True
+            assert updated.allow_read is True
+            assert updated.allow_write is True
+            assert updated.allow_upload is True
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_set_role_editor_sets_correct_flags(
+        self, app_with_user, admin_client
+    ):
+        """POST with role=editor should set is_admin=False, allow_write=True."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            user = UserModel.query.filter_by(email="another@user.org").first()
+            assert user is not None
+            rv = admin_client.post(
+                f"/-/user/{user.id}",
+                data={
+                    "name": user.name,
+                    "email": user.email,
+                    "role": "editor",
+                },
+                follow_redirects=True,
+            )
+            assert rv.status_code == 200
+            updated = UserModel.query.filter_by(
+                email="another@user.org"
+            ).first()
+            assert updated.is_admin is False
+            assert updated.is_approved is True
+            assert updated.allow_read is True
+            assert updated.allow_write is True
+            assert updated.allow_upload is True
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_set_role_viewer_sets_correct_flags(
+        self, app_with_user, admin_client
+    ):
+        """POST with role=viewer should set allow_write=False, allow_upload=False."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            user = UserModel.query.filter_by(email="another@user.org").first()
+            assert user is not None
+            rv = admin_client.post(
+                f"/-/user/{user.id}",
+                data={
+                    "name": user.name,
+                    "email": user.email,
+                    "role": "viewer",
+                },
+                follow_redirects=True,
+            )
+            assert rv.status_code == 200
+            updated = UserModel.query.filter_by(
+                email="another@user.org"
+            ).first()
+            assert updated.is_admin is False
+            assert updated.is_approved is True
+            assert updated.allow_read is True
+            assert updated.allow_write is False
+            assert updated.allow_upload is False
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_non_platform_mode_shows_checkboxes(
+        self, app_with_user, admin_client
+    ):
+        """Without PLATFORM_MODE, original flag checkboxes should render."""
+        from otterwiki.models import User as UserModel
+
+        # Ensure PLATFORM_MODE is off
+        app_with_user.config["PLATFORM_MODE"] = False
+        user = UserModel.query.filter_by(email="another@user.org").first()
+        assert user is not None
+        rv = admin_client.get(f"/-/user/{user.id}")
+        assert rv.status_code == 200
+        soup = BeautifulSoup(rv.data.decode(), "html.parser")
+        # Should have checkboxes for individual flags, no role dropdown
+        role_select = soup.find("select", {"name": "role"})
+        assert role_select is None
+        is_admin_cb = soup.find("input", {"name": "is_admin"})
+        assert is_admin_cb is not None

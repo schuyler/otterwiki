@@ -32,6 +32,21 @@
     <h3 class="card-title">Flags and Permissions</h3>
     <div class="container-fluid">
       <div class="row">
+    {% if config.PLATFORM_MODE %}
+    <div class="col-sm-4 pr-5">
+      <div class="form-group">
+        <label for="role" class="w-md-200">Role</label>
+        <select class="form-control" name="role" id="role">
+          {%
+            set current_role = "admin" if user.is_admin else ("editor" if user.allow_write else "viewer")
+          %}
+          <option value="admin" {{ "selected" if current_role == "admin" }}>Admin</option>
+          <option value="editor" {{ "selected" if current_role == "editor" }}>Editor</option>
+          <option value="viewer" {{ "selected" if current_role == "viewer" }}>Viewer</option>
+        </select>
+      </div>
+    </div>
+    {% else %}
     {%
       set all_flags = [
         (
@@ -53,7 +68,6 @@
     %}
     {%
       for label, name, value, note, new_row in all_flags
-        if not (config.PLATFORM_MODE and name == "email_confirmed")
     %}
     <div class="col-sm-4 pr-5">
       <div class="form-group">
@@ -73,6 +87,7 @@
       <div class="row">
     {% endif %}
   {% endfor %}
+    {% endif %}
       </div> {# row #}
     </div> {# container-fluid #}
       {# #}

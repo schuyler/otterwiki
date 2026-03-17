@@ -11,11 +11,15 @@
         <th>&nbsp;</th>
         <th>{% if config.PLATFORM_MODE %}Handle{% else %}eMail{% endif %}</th>
         <th>Name</th>
+        {% if config.PLATFORM_MODE %}
+        <th>Role</th>
+        {% else %}
         <th><span class="hidden-md-and-down">Approved</span><span class="hidden-lg-and-up">Ap-<br/>proved</span></th>
         <th>Read</th>
         <th>Write</th>
         <th>Upload</th>
         <th>Admin</th>
+        {% endif %}
       </tr>
     </thead>
     <tbody>
@@ -34,6 +38,11 @@
         <td>
             {{user.name}}
         </td>
+        {% if config.PLATFORM_MODE %}
+        <td>
+          {% if user.is_admin %}Admin{% elif user.allow_write %}Editor{% else %}Viewer{% endif %}
+        </td>
+        {% else %}
         <td>
           <div class="custom-checkbox">
               <input type="checkbox" id="checkbox-a-{{user.id}}" name="is_approved" value="{{user.id}}" {{"checked=\"checked\""|safe if
@@ -69,6 +78,7 @@
             <label for="checkbox-e-{{user.id}}"></label>
           </div>
         </td>
+        {% endif %}
       </tr>
 {% endfor %}
     </tbody>
