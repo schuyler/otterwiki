@@ -238,7 +238,6 @@ def admin_sidebar_preferences():
     "/-/admin/permissions_and_registration", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required
-@platform_mode_disabled
 def admin_permissions_and_registration():
     if request.method == "GET":
         return otterwiki.preferences.permissions_and_registration_form()
