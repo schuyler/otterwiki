@@ -3,6 +3,8 @@
 
 """Tests for PLATFORM_MODE admin panel hiding (P2-8) and permissions panel."""
 
+from unittest.mock import patch
+
 from bs4 import BeautifulSoup
 
 
@@ -200,3 +202,46 @@ class TestPlatformModeEnabled:
                 if entry is not None:
                     db.session.delete(entry)
             db.session.commit()
+
+
+class TestPlatformModeRepomgmt:
+    """Tests that repomgmt operations are suppressed in PLATFORM_MODE."""
+
+    def test_auto_push_disabled_in_platform_mode(self, app_with_user):
+        """auto_push_if_enabled() must not attempt a push when PLATFORM_MODE=True."""
+        from otterwiki.repomgmt import RepositoryManager
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        app_with_user.config["GIT_REMOTE_PUSH_ENABLED"] = True
+        app_with_user.config["GIT_REMOTE_PUSH_URL"] = (
+            "git@github.com:example/repo.git"
+        )
+        try:
+            rm = RepositoryManager(app_with_user.storage)
+            with patch.object(rm, "push_to_remote_async") as mock_push:
+                rm.auto_push_if_enabled()
+                mock_push.assert_not_called()
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+            app_with_user.config["GIT_REMOTE_PUSH_ENABLED"] = False
+            app_with_user.config["GIT_REMOTE_PUSH_URL"] = None
+
+    def test_auto_pull_webhook_disabled_in_platform_mode(self, app_with_user):
+        """auto_pull_webhook() must return False and not attempt a pull when PLATFORM_MODE=True."""
+        from otterwiki.repomgmt import RepositoryManager
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        app_with_user.config["GIT_REMOTE_PULL_ENABLED"] = True
+        app_with_user.config["GIT_REMOTE_PULL_URL"] = (
+            "git@github.com:example/repo.git"
+        )
+        try:
+            rm = RepositoryManager(app_with_user.storage)
+            with patch.object(rm, "pull_from_remote_async") as mock_pull:
+                result = rm.auto_pull_webhook()
+                assert result is False
+                mock_pull.assert_not_called()
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+            app_with_user.config["GIT_REMOTE_PULL_ENABLED"] = False
+            app_with_user.config["GIT_REMOTE_PULL_URL"] = None
