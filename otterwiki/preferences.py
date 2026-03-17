@@ -416,12 +416,18 @@ def handle_preferences(form):
         return handle_app_preferences(form)
 
 
+ALLOWED_ACCESS_LEVELS = {"ANONYMOUS", "REGISTERED", "APPROVED"}
+
+
 def handle_permissions_and_registration(form):
     if not has_permission("ADMIN"):
         abort(403)
     # handle dropdowns
     for name in ["READ_access", "WRITE_access", "ATTACHMENT_access"]:
-        _update_preference(name.upper(), form.get(name, "ANONYMOUS"))
+        value = form.get(name, "ANONYMOUS").upper()
+        if value not in ALLOWED_ACCESS_LEVELS:
+            value = "ANONYMOUS"
+        _update_preference(name.upper(), value)
     # Only process registration settings outside platform mode
     if not app.config.get("PLATFORM_MODE"):
         for checkbox in [
