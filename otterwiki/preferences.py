@@ -8,6 +8,7 @@ from typing import cast
 from otterwiki.models import User
 from otterwiki.util import is_valid_email
 from flask import (
+    current_app,
     redirect,
     abort,
     url_for,
@@ -185,12 +186,12 @@ def handle_app_preferences(form):
         )
         return redirect(url_for("admin"))
 
-    # handle server_name
-    server_name = form.get("server_name", "").strip()
-    if empty(server_name):
-        server_name = None
-
-    _update_preference("SERVER_NAME", server_name)
+    # handle server_name (skipped in PLATFORM_MODE — managed by platform)
+    if not current_app.config.get("PLATFORM_MODE"):
+        server_name = form.get("server_name", "").strip()
+        if empty(server_name):
+            server_name = None
+        _update_preference("SERVER_NAME", server_name)
 
     # commit changes to the database
     db.session.commit()
