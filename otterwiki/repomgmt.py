@@ -302,6 +302,9 @@ class RepositoryManager:
         try:
             from otterwiki.server import app
 
+            if app.config.get('PLATFORM_MODE'):
+                return
+
             if not app.config.get('GIT_REMOTE_PUSH_ENABLED'):
                 return
 
@@ -336,6 +339,9 @@ class RepositoryManager:
         """
         try:
             from otterwiki.server import app
+
+            if app.config.get('PLATFORM_MODE'):
+                return False
 
             if not app.config.get('GIT_REMOTE_PULL_ENABLED'):
                 return False

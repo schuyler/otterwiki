@@ -598,7 +598,7 @@ class ProxyHeaderAuth:
             return f"<User '{self.name} <{self.email}>' a:{self.is_admin}>"
 
     def supported_features(self):
-        return {'passwords': False, 'editing': False, 'logout': False}
+        return {'passwords': False, 'editing': True, 'logout': False}
 
     # called on every page load
     def request_loader(self, req):
@@ -657,7 +657,27 @@ class ProxyHeaderAuth:
         )
 
     def get_all_user(self):
-        return [current_user]
+        from otterwiki.models import User as UserModel
+
+        return UserModel.query.order_by(UserModel.email).all()
+
+    def get_user(self, uid: str | None = None, email: str | None = None):
+        from otterwiki.models import User as UserModel
+
+        if uid is not None:
+            return UserModel.query.filter_by(id=uid).first()
+        if email is not None:
+            return UserModel.query.filter_by(email=email).first()
+        return UserModel()
+
+    def update_user(self, user):
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    def delete_user(self, user):
+        db.session.delete(user)
+        db.session.commit()
 
     def has_permission(self, permission, user):
         if not user.is_authenticated:

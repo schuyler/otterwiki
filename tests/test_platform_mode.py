@@ -3,13 +3,21 @@
 
 """Tests for PLATFORM_MODE admin panel hiding (P2-8) and permissions panel."""
 
+from unittest.mock import patch
+
 from bs4 import BeautifulSoup
 
 
-# Routes that should be disabled in platform mode
+# Routes that should be disabled in platform mode (return 200 when enabled)
 DISABLED_ROUTES = [
-    "/-/admin/user_management",
     "/-/admin/mail_preferences",
+    "/-/admin/repository_management",
+]
+
+# Routes that should be disabled in platform mode but don't return 200 when enabled
+# (e.g., they require valid inputs/hashes to succeed)
+DISABLED_WEBHOOK_ROUTES = [
+    "/-/api/v1/pull/deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 ]
 
 # Routes that should remain enabled in platform mode
@@ -17,8 +25,8 @@ ENABLED_ROUTES = [
     "/-/admin",
     "/-/admin/sidebar_preferences",
     "/-/admin/content_and_editing",
-    "/-/admin/repository_management",
     "/-/admin/permissions_and_registration",
+    "/-/admin/user_management",
 ]
 
 
@@ -59,7 +67,7 @@ class TestPlatformModeEnabled:
         """Disabled admin routes should return 404 in platform mode."""
         app_with_user.config["PLATFORM_MODE"] = True
         try:
-            for route in DISABLED_ROUTES:
+            for route in DISABLED_ROUTES + DISABLED_WEBHOOK_ROUTES:
                 rv = admin_client.get(route)
                 assert rv.status_code == 404, f"{route} should return 404"
         finally:
@@ -71,7 +79,7 @@ class TestPlatformModeEnabled:
         """POST to disabled admin routes should also return 404 in platform mode."""
         app_with_user.config["PLATFORM_MODE"] = True
         try:
-            for route in DISABLED_ROUTES:
+            for route in DISABLED_ROUTES + DISABLED_WEBHOOK_ROUTES:
                 rv = admin_client.post(route, data={})
                 assert rv.status_code == 404, f"POST {route} should return 404"
         finally:
@@ -98,10 +106,9 @@ class TestPlatformModeEnabled:
             soup = BeautifulSoup(html, "html.parser")
             nav_text = soup.get_text()
             # These should be hidden
-            assert "User Management" not in nav_text
             assert "Mail Preferences" not in nav_text
+            assert "Repository Management" not in nav_text
             # These should still be visible
-            assert "Repository Management" in nav_text
             assert "Application Preferences" in nav_text
             assert "Sidebar Preferences" in nav_text
             assert "Content and Editing" in nav_text
@@ -109,12 +116,12 @@ class TestPlatformModeEnabled:
         finally:
             app_with_user.config["PLATFORM_MODE"] = False
 
-    def test_user_edit_route_returns_404(self, app_with_user, admin_client):
-        """The /-/user/ route should return 404 in platform mode."""
+    def test_user_edit_route_accessible(self, app_with_user, admin_client):
+        """The /-/user/ route should be accessible in platform mode."""
         app_with_user.config["PLATFORM_MODE"] = True
         try:
             rv = admin_client.get("/-/user/")
-            assert rv.status_code == 404
+            assert rv.status_code == 200
         finally:
             app_with_user.config["PLATFORM_MODE"] = False
 
@@ -195,3 +202,46 @@ class TestPlatformModeEnabled:
                 if entry is not None:
                     db.session.delete(entry)
             db.session.commit()
+
+
+class TestPlatformModeRepomgmt:
+    """Tests that repomgmt operations are suppressed in PLATFORM_MODE."""
+
+    def test_auto_push_disabled_in_platform_mode(self, app_with_user):
+        """auto_push_if_enabled() must not attempt a push when PLATFORM_MODE=True."""
+        from otterwiki.repomgmt import RepositoryManager
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        app_with_user.config["GIT_REMOTE_PUSH_ENABLED"] = True
+        app_with_user.config["GIT_REMOTE_PUSH_URL"] = (
+            "git@github.com:example/repo.git"
+        )
+        try:
+            rm = RepositoryManager(app_with_user.storage)
+            with patch.object(rm, "push_to_remote_async") as mock_push:
+                rm.auto_push_if_enabled()
+                mock_push.assert_not_called()
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+            app_with_user.config["GIT_REMOTE_PUSH_ENABLED"] = False
+            app_with_user.config["GIT_REMOTE_PUSH_URL"] = None
+
+    def test_auto_pull_webhook_disabled_in_platform_mode(self, app_with_user):
+        """auto_pull_webhook() must return False and not attempt a pull when PLATFORM_MODE=True."""
+        from otterwiki.repomgmt import RepositoryManager
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        app_with_user.config["GIT_REMOTE_PULL_ENABLED"] = True
+        app_with_user.config["GIT_REMOTE_PULL_URL"] = (
+            "git@github.com:example/repo.git"
+        )
+        try:
+            rm = RepositoryManager(app_with_user.storage)
+            with patch.object(rm, "pull_from_remote_async") as mock_pull:
+                result = rm.auto_pull_webhook()
+                assert result is False
+                mock_pull.assert_not_called()
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+            app_with_user.config["GIT_REMOTE_PULL_ENABLED"] = False
+            app_with_user.config["GIT_REMOTE_PULL_URL"] = None

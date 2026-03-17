@@ -215,7 +215,6 @@ def housekeeping():
     "/-/admin/user_management", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required
-@platform_mode_disabled
 def admin_user_management():
     if request.method == "GET":
         return otterwiki.preferences.user_management_form()
@@ -262,6 +261,7 @@ def admin_content_and_editing():
     "/-/admin/repository_management", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required
+@platform_mode_disabled
 def admin_repository_management():
     if request.method == "GET":
         return otterwiki.preferences.repository_management_form()
@@ -295,7 +295,6 @@ def admin():
 @app.route("/-/user/", methods=["POST", "GET"])
 @app.route("/-/user/<string:uid>", methods=["POST", "GET"])
 @login_required
-@platform_mode_disabled
 def user(uid=None):
     if request.method == "GET":
         return otterwiki.preferences.user_edit_form(uid)
@@ -678,6 +677,7 @@ def git_receive_pack():
 
 
 @app.route("/-/api/v1/pull/<string:webhook_hash>", methods=["POST", "GET"])
+@platform_mode_disabled
 def pull_webhook(webhook_hash):
     """
     Webhook endpoint for triggering git pulls from remote repositories.

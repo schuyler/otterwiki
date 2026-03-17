@@ -37,6 +37,34 @@ from otterwiki.auth import (
 )
 
 
+def _role_to_flags(role):
+    """Map a PLATFORM_MODE role string to individual permission flags."""
+    if role == "admin":
+        return {
+            "is_admin": True,
+            "is_approved": True,
+            "allow_read": True,
+            "allow_write": True,
+            "allow_upload": True,
+        }
+    elif role == "editor":
+        return {
+            "is_admin": False,
+            "is_approved": True,
+            "allow_read": True,
+            "allow_write": True,
+            "allow_upload": True,
+        }
+    else:  # viewer
+        return {
+            "is_admin": False,
+            "is_approved": True,
+            "allow_read": True,
+            "allow_write": False,
+            "allow_upload": False,
+        }
+
+
 def _update_preference(name, value, commit=False):
     entry = Preferences.query.filter_by(name=name).first()
     if entry is None:
@@ -655,10 +683,18 @@ def handle_user_add(form):
         error.append("Name must not be empty")
     if get_user(email=user.email) is not None:  # pyright: ignore
         error.append("User with this email exists")
-    if not is_valid_email(user.email):  # pyright: ignore
+    if not app.config.get("PLATFORM_MODE") and not is_valid_email(
+        user.email
+    ):  # pyright: ignore
         error.append("Invalid email address")
-    # handle password
-    if len(form.get("password1", "")) or len(form.get("password2", "")):
+    elif app.config.get("PLATFORM_MODE") and empty(
+        user.email
+    ):  # pyright: ignore
+        error.append("Handle must not be empty")
+    # handle password (skip in PLATFORM_MODE)
+    if not app.config.get("PLATFORM_MODE") and (
+        len(form.get("password1", "")) or len(form.get("password2", ""))
+    ):
         if form.get("password1", "") != form.get("password2", ""):
             error.append("Passwords do not match")
         else:
@@ -717,38 +753,59 @@ def handle_user_edit(uid, form):
             user.name = new_name
         else:
             toast("User name must not be empty.", "danger")
-    # email
+    # email / handle
     if user.email != form.get("email").strip():
-        if is_valid_email(form.get("email").strip()):
-            msgs.append(f"updated {user.email} to {form.get('email').strip()}")
-            user.email = form.get("email").strip()
+        new_email = form.get("email").strip()
+        if app.config.get("PLATFORM_MODE"):
+            if not empty(new_email):
+                msgs.append(f"updated {user.email} to {new_email}")
+                user.email = new_email
+            else:
+                toast("Handle must not be empty", "danger")
+        elif is_valid_email(new_email):
+            msgs.append(f"updated {user.email} to {new_email}")
+            user.email = new_email
         else:
             toast(
-                f"'{form.get('email').strip()}' is not a valid email address",
+                f"'{new_email}' is not a valid email address",
                 "danger",
             )
-    if len(form.get("password1", "")) or len(form.get("password2", "")):
+    if not app.config.get("PLATFORM_MODE") and (
+        len(form.get("password1", "")) or len(form.get("password2", ""))
+    ):
         if form.get("password1", "") != form.get("password2", ""):
             toast("Passwords do not match", "danger")
         else:
             user.password_hash = generate_password_hash(form.get("password1"))
             msgs.append("Updated password")
     user_was_already_approved = user.is_approved
-    # handle all the flags
-    for value, label in [
-        ("email_confirmed", "email confirmed"),
-        ("is_admin", "admin"),
-        ("is_approved", "approved"),
-        ("allow_read", "read"),
-        ("allow_write", "write"),
-        ("allow_upload", "upload"),
-    ]:
-        if getattr(user, value) and not form.get(value):
-            setattr(user, value, False)
-            flags.append(f"removed {label}")
-        elif not getattr(user, value) and form.get(value):
-            setattr(user, value, True)
-            flags.append(f"added {label}")
+    # handle flags: in PLATFORM_MODE use role dropdown, otherwise use individual checkboxes
+    if app.config.get("PLATFORM_MODE") and form.get("role"):
+        role_flags = _role_to_flags(form.get("role"))
+        for flag_name, new_val in role_flags.items():
+            old_val = getattr(user, flag_name)
+            if old_val != new_val:
+                setattr(user, flag_name, new_val)
+                label = flag_name.replace("_", " ")
+                if new_val:
+                    flags.append(f"added {label}")
+                else:
+                    flags.append(f"removed {label}")
+    else:
+        for value, label in [
+            ("email_confirmed", "email confirmed"),
+            ("is_admin", "admin"),
+            ("is_approved", "approved"),
+            ("allow_read", "read"),
+            ("allow_write", "write"),
+            ("allow_upload", "upload"),
+        ]:
+            if getattr(user, value) and not form.get(value):
+                setattr(user, value, False)
+                flags.append(f"removed {label}")
+            elif not getattr(user, value) and form.get(value):
+                setattr(user, value, True)
+                flags.append(f"added {label}")
     # all flags checked updated msgs
     if len(flags):
         msgs.append("{} flag".format(" and ".join(flags)))
