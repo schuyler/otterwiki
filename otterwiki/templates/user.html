@@ -16,9 +16,10 @@
         <input type="text" class="form-control" name="name" id="name" placeholder="" value="{{user.name if user.name}}">
       </div>
       <div class="form-group">
-        <label for="name" class="required w-md-200">eMail</label>
-        <input type="text" class="form-control" name="email" id="email" placeholder="" value="{{user.email if user.email}}">
+        <label for="email" class="required w-md-200">{% if config.PLATFORM_MODE %}Handle{% else %}eMail{% endif %}</label>
+        <input type="text" class="form-control" name="email" id="email" placeholder="{% if config.PLATFORM_MODE %}@handle.bsky.social{% endif %}" value="{{user.email if user.email}}">
       </div>
+      {% if not config.PLATFORM_MODE %}
       <div class="form-group">
         <label for="password1" class="w-md-200">Password</label>
         <input type="password" class="form-control" name="password1" id="password1" placeholder="" value="">
@@ -27,11 +28,12 @@
         <label for="password2" class="w-md-200">Confirm password</label>
         <input type="password" class="form-control" name="password2" id="password2" placeholder="" value="">
       </div>
+      {% endif %}
     <h3 class="card-title">Flags and Permissions</h3>
     <div class="container-fluid">
       <div class="row">
     {%
-      for label, name, value, note, new_row in [
+      set all_flags = [
         (
           "eMail confirmed","email_confirmed",
           user.email_confirmed,
@@ -48,6 +50,10 @@
         ("Upload","allow_upload",user.allow_upload,"", True),
         ("Admin","is_admin",user.is_admin,"Users flagged as admins always have <strong>all</strong> the permissions.", False),
       ]
+    %}
+    {%
+      for label, name, value, note, new_row in all_flags
+        if not (config.PLATFORM_MODE and name == "email_confirmed")
     %}
     <div class="col-sm-4 pr-5">
       <div class="form-group">

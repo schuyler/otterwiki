@@ -655,10 +655,18 @@ def handle_user_add(form):
         error.append("Name must not be empty")
     if get_user(email=user.email) is not None:  # pyright: ignore
         error.append("User with this email exists")
-    if not is_valid_email(user.email):  # pyright: ignore
+    if not app.config.get("PLATFORM_MODE") and not is_valid_email(
+        user.email
+    ):  # pyright: ignore
         error.append("Invalid email address")
-    # handle password
-    if len(form.get("password1", "")) or len(form.get("password2", "")):
+    elif app.config.get("PLATFORM_MODE") and empty(
+        user.email
+    ):  # pyright: ignore
+        error.append("Handle must not be empty")
+    # handle password (skip in PLATFORM_MODE)
+    if not app.config.get("PLATFORM_MODE") and (
+        len(form.get("password1", "")) or len(form.get("password2", ""))
+    ):
         if form.get("password1", "") != form.get("password2", ""):
             error.append("Passwords do not match")
         else:
@@ -717,17 +725,26 @@ def handle_user_edit(uid, form):
             user.name = new_name
         else:
             toast("User name must not be empty.", "danger")
-    # email
+    # email / handle
     if user.email != form.get("email").strip():
-        if is_valid_email(form.get("email").strip()):
-            msgs.append(f"updated {user.email} to {form.get('email').strip()}")
-            user.email = form.get("email").strip()
+        new_email = form.get("email").strip()
+        if app.config.get("PLATFORM_MODE"):
+            if not empty(new_email):
+                msgs.append(f"updated {user.email} to {new_email}")
+                user.email = new_email
+            else:
+                toast("Handle must not be empty", "danger")
+        elif is_valid_email(new_email):
+            msgs.append(f"updated {user.email} to {new_email}")
+            user.email = new_email
         else:
             toast(
-                f"'{form.get('email').strip()}' is not a valid email address",
+                f"'{new_email}' is not a valid email address",
                 "danger",
             )
-    if len(form.get("password1", "")) or len(form.get("password2", "")):
+    if not app.config.get("PLATFORM_MODE") and (
+        len(form.get("password1", "")) or len(form.get("password2", ""))
+    ):
         if form.get("password1", "") != form.get("password2", ""):
             toast("Passwords do not match", "danger")
         else:

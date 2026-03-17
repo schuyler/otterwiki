@@ -215,7 +215,6 @@ def housekeeping():
     "/-/admin/user_management", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required
-@platform_mode_disabled
 def admin_user_management():
     if request.method == "GET":
         return otterwiki.preferences.user_management_form()
@@ -295,7 +294,6 @@ def admin():
 @app.route("/-/user/", methods=["POST", "GET"])
 @app.route("/-/user/<string:uid>", methods=["POST", "GET"])
 @login_required
-@platform_mode_disabled
 def user(uid=None):
     if request.method == "GET":
         return otterwiki.preferences.user_edit_form(uid)

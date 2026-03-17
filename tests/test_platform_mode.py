@@ -8,7 +8,6 @@ from bs4 import BeautifulSoup
 
 # Routes that should be disabled in platform mode
 DISABLED_ROUTES = [
-    "/-/admin/user_management",
     "/-/admin/mail_preferences",
 ]
 
@@ -19,6 +18,7 @@ ENABLED_ROUTES = [
     "/-/admin/content_and_editing",
     "/-/admin/repository_management",
     "/-/admin/permissions_and_registration",
+    "/-/admin/user_management",
 ]
 
 
@@ -98,7 +98,6 @@ class TestPlatformModeEnabled:
             soup = BeautifulSoup(html, "html.parser")
             nav_text = soup.get_text()
             # These should be hidden
-            assert "User Management" not in nav_text
             assert "Mail Preferences" not in nav_text
             # These should still be visible
             assert "Repository Management" in nav_text
@@ -109,12 +108,12 @@ class TestPlatformModeEnabled:
         finally:
             app_with_user.config["PLATFORM_MODE"] = False
 
-    def test_user_edit_route_returns_404(self, app_with_user, admin_client):
-        """The /-/user/ route should return 404 in platform mode."""
+    def test_user_edit_route_accessible(self, app_with_user, admin_client):
+        """The /-/user/ route should be accessible in platform mode."""
         app_with_user.config["PLATFORM_MODE"] = True
         try:
             rv = admin_client.get("/-/user/")
-            assert rv.status_code == 404
+            assert rv.status_code == 200
         finally:
             app_with_user.config["PLATFORM_MODE"] = False
 
