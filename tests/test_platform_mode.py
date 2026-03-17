@@ -6,9 +6,16 @@
 from bs4 import BeautifulSoup
 
 
-# Routes that should be disabled in platform mode
+# Routes that should be disabled in platform mode (return 200 when enabled)
 DISABLED_ROUTES = [
     "/-/admin/mail_preferences",
+    "/-/admin/repository_management",
+]
+
+# Routes that should be disabled in platform mode but don't return 200 when enabled
+# (e.g., they require valid inputs/hashes to succeed)
+DISABLED_WEBHOOK_ROUTES = [
+    "/-/api/v1/pull/deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 ]
 
 # Routes that should remain enabled in platform mode
@@ -16,7 +23,6 @@ ENABLED_ROUTES = [
     "/-/admin",
     "/-/admin/sidebar_preferences",
     "/-/admin/content_and_editing",
-    "/-/admin/repository_management",
     "/-/admin/permissions_and_registration",
     "/-/admin/user_management",
 ]
@@ -59,7 +65,7 @@ class TestPlatformModeEnabled:
         """Disabled admin routes should return 404 in platform mode."""
         app_with_user.config["PLATFORM_MODE"] = True
         try:
-            for route in DISABLED_ROUTES:
+            for route in DISABLED_ROUTES + DISABLED_WEBHOOK_ROUTES:
                 rv = admin_client.get(route)
                 assert rv.status_code == 404, f"{route} should return 404"
         finally:
@@ -71,7 +77,7 @@ class TestPlatformModeEnabled:
         """POST to disabled admin routes should also return 404 in platform mode."""
         app_with_user.config["PLATFORM_MODE"] = True
         try:
-            for route in DISABLED_ROUTES:
+            for route in DISABLED_ROUTES + DISABLED_WEBHOOK_ROUTES:
                 rv = admin_client.post(route, data={})
                 assert rv.status_code == 404, f"POST {route} should return 404"
         finally:
@@ -99,8 +105,8 @@ class TestPlatformModeEnabled:
             nav_text = soup.get_text()
             # These should be hidden
             assert "Mail Preferences" not in nav_text
+            assert "Repository Management" not in nav_text
             # These should still be visible
-            assert "Repository Management" in nav_text
             assert "Application Preferences" in nav_text
             assert "Sidebar Preferences" in nav_text
             assert "Content and Editing" in nav_text

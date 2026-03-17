@@ -261,6 +261,7 @@ def admin_content_and_editing():
     "/-/admin/repository_management", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required
+@platform_mode_disabled
 def admin_repository_management():
     if request.method == "GET":
         return otterwiki.preferences.repository_management_form()
@@ -676,6 +677,7 @@ def git_receive_pack():
 
 
 @app.route("/-/api/v1/pull/<string:webhook_hash>", methods=["POST", "GET"])
+@platform_mode_disabled
 def pull_webhook(webhook_hash):
     """
     Webhook endpoint for triggering git pulls from remote repositories.
