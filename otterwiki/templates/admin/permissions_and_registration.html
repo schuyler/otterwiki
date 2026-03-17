@@ -22,9 +22,11 @@
       </label>
       <select class="form-control w-md-400" id="{{permission}}_permission" name="{{permission}}_access">
         {% for permission_option in ["ANONYMOUS","REGISTERED","APPROVED","ADMIN"] %}
+        {%- if not (config.PLATFORM_MODE and permission_option == "ADMIN") %}
         <option {% if config[permission + "_ACCESS"] == permission_option -%}
 selected="selected"
 {%- endif %} value="{{permission_option}}">{{permission_option | capitalize}}</option>
+        {%- endif %}
         {% endfor %}
     </select>
   </div>
@@ -32,6 +34,7 @@ selected="selected"
 {##}
 <div class="form-text pt-0 mt-0 mb-20"></div>
 {##}
+{% if not config.PLATFORM_MODE %}
   <div class="form-group">
     <div class="custom-checkbox">
       <input {%if config.DISABLE_REGISTRATION %}checked{% endif %} type="checkbox" id="disable_registration" name="disable_registration" value="True">
@@ -83,6 +86,7 @@ selected="selected"
       Users get a notification mail when their account has been approved. This is useful when users are not auto approved.
     </div>
   </div>
+{% endif %}
   <div class="mt-10">
     <input class="btn btn-primary" name="update_preferences" type="submit" value="Save Preferences">
   </div>

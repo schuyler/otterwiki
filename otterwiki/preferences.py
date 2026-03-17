@@ -422,15 +422,16 @@ def handle_permissions_and_registration(form):
     # handle dropdowns
     for name in ["READ_access", "WRITE_access", "ATTACHMENT_access"]:
         _update_preference(name.upper(), form.get(name, "ANONYMOUS"))
-    # handle checkboxes
-    for checkbox in [
-        "disable_registration",
-        "auto_approval",
-        "email_needs_confirmation",
-        "notify_admins_on_register",
-        "notify_user_on_approval",
-    ]:
-        _update_preference(checkbox.upper(), form.get(checkbox, "False"))
+    # Only process registration settings outside platform mode
+    if not app.config.get("PLATFORM_MODE"):
+        for checkbox in [
+            "disable_registration",
+            "auto_approval",
+            "email_needs_confirmation",
+            "notify_admins_on_register",
+            "notify_user_on_approval",
+        ]:
+            _update_preference(checkbox.upper(), form.get(checkbox, "False"))
     # commit changes to the database
     db.session.commit()
     update_app_config()

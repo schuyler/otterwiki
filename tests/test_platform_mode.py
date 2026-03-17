@@ -1,16 +1,14 @@
 #!/usr/bin/env python
 # vim: set et ts=8 sts=4 sw=4 ai:
 
-"""Tests for PLATFORM_MODE admin panel hiding (P2-8)."""
+"""Tests for PLATFORM_MODE admin panel hiding (P2-8) and permissions panel."""
 
 from bs4 import BeautifulSoup
 
 
 # Routes that should be disabled in platform mode
 DISABLED_ROUTES = [
-    "/-/admin/repository_management",
     "/-/admin/user_management",
-    "/-/admin/permissions_and_registration",
     "/-/admin/mail_preferences",
 ]
 
@@ -19,6 +17,8 @@ ENABLED_ROUTES = [
     "/-/admin",
     "/-/admin/sidebar_preferences",
     "/-/admin/content_and_editing",
+    "/-/admin/repository_management",
+    "/-/admin/permissions_and_registration",
 ]
 
 
@@ -98,14 +98,14 @@ class TestPlatformModeEnabled:
             soup = BeautifulSoup(html, "html.parser")
             nav_text = soup.get_text()
             # These should be hidden
-            assert "Repository Management" not in nav_text
             assert "User Management" not in nav_text
-            assert "Permissions and Registration" not in nav_text
             assert "Mail Preferences" not in nav_text
             # These should still be visible
+            assert "Repository Management" in nav_text
             assert "Application Preferences" in nav_text
             assert "Sidebar Preferences" in nav_text
             assert "Content and Editing" in nav_text
+            assert "Permissions and Registration" in nav_text
         finally:
             app_with_user.config["PLATFORM_MODE"] = False
 
@@ -117,3 +117,81 @@ class TestPlatformModeEnabled:
             assert rv.status_code == 404
         finally:
             app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_permissions_nav_visible_in_platform_mode(
+        self, app_with_user, admin_client
+    ):
+        """Permissions and Registration nav link should be visible in platform mode."""
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            rv = admin_client.get("/-/admin")
+            html = rv.data.decode()
+            soup = BeautifulSoup(html, "html.parser")
+            nav_text = soup.get_text()
+            assert "Permissions and Registration" in nav_text
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_permissions_route_accessible_in_platform_mode(
+        self, app_with_user, admin_client
+    ):
+        """GET /-/admin/permissions_and_registration should return 200 in platform mode."""
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            rv = admin_client.get("/-/admin/permissions_and_registration")
+            assert rv.status_code == 200
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_registration_fields_not_saved_in_platform_mode(
+        self, app_with_user, admin_client
+    ):
+        """Registration checkboxes must not be persisted when PLATFORM_MODE=True."""
+        from otterwiki.server import db, Preferences
+
+        # Save original access settings to restore after test (avoid test state pollution)
+        orig_read = app_with_user.config.get("READ_ACCESS", "ANONYMOUS")
+        orig_write = app_with_user.config.get("WRITE_ACCESS", "ANONYMOUS")
+        orig_attachment = app_with_user.config.get(
+            "ATTACHMENT_ACCESS", "ANONYMOUS"
+        )
+        # Set known baseline
+        app_with_user.config["DISABLE_REGISTRATION"] = False
+        app_with_user.config["AUTO_APPROVAL"] = False
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            rv = admin_client.post(
+                "/-/admin/permissions_and_registration",
+                data={
+                    "READ_access": "ANONYMOUS",
+                    "WRITE_access": "REGISTERED",
+                    "ATTACHMENT_access": "APPROVED",
+                    "disable_registration": "True",
+                    "auto_approval": "True",
+                    "email_needs_confirmation": "True",
+                    "notify_admins_on_register": "True",
+                    "notify_user_on_approval": "True",
+                },
+                follow_redirects=True,
+            )
+            assert rv.status_code == 200
+            # Access settings should be updated
+            assert app_with_user.config["READ_ACCESS"] == "ANONYMOUS"
+            assert app_with_user.config["WRITE_ACCESS"] == "REGISTERED"
+            # Registration fields must NOT have been saved
+            assert app_with_user.config["DISABLE_REGISTRATION"] == False
+            assert app_with_user.config["AUTO_APPROVAL"] == False
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+            # Restore access settings in both app.config and DB to avoid polluting
+            # subsequent tests (the DB persists across tests via shared in-memory SQLite)
+            for name, value in [
+                ("READ_ACCESS", orig_read),
+                ("WRITE_ACCESS", orig_write),
+                ("ATTACHMENT_ACCESS", orig_attachment),
+            ]:
+                app_with_user.config[name] = value
+                entry = Preferences.query.filter_by(name=name).first()
+                if entry is not None:
+                    db.session.delete(entry)
+            db.session.commit()
