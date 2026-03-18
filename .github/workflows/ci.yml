@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, wikibot-io]
+    branches: [wikibot-io]
   pull_request:
-    branches: [main, wikibot-io]
+    branches: [wikibot-io]
 
 jobs:
   test:
