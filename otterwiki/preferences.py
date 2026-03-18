@@ -34,6 +34,7 @@ from otterwiki.auth import (
     delete_user,
     generate_password_hash,
 )
+from otterwiki.plugins import plugin_manager
 
 
 def _update_preference(name, value, commit=False):
@@ -431,6 +432,9 @@ def handle_preferences(form):
 def handle_permissions_and_registration(form):
     if not has_permission("ADMIN"):
         abort(403)
+    # snapshot current access setting values before changes
+    _access_settings = ["READ_ACCESS", "WRITE_ACCESS", "ATTACHMENT_ACCESS"]
+    _old_values = {name: app.config.get(name) for name in _access_settings}
     # handle dropdowns
     for name in ["READ_access", "WRITE_access", "ATTACHMENT_access"]:
         _update_preference(name.upper(), form.get(name, "ANONYMOUS"))
@@ -446,6 +450,18 @@ def handle_permissions_and_registration(form):
     # commit changes to the database
     db.session.commit()
     update_app_config()
+    # fire hooks for any access settings that changed
+    _author = (current_user.name, current_user.email)
+    for _name in _access_settings:
+        _new_val = app.config.get(_name)
+        _old_val = _old_values[_name]
+        if _new_val != _old_val:
+            plugin_manager.hook.permission_changed(
+                setting_name=_name,
+                old_value=_old_val,
+                new_value=_new_val,
+                author=_author,
+            )
     toast("Preferences updated.")
     return redirect(url_for("admin_permissions_and_registration"))
 
@@ -482,6 +498,14 @@ def handle_user_management(form):
         for user in get_all_user():
             user_was_just_approved = False
             msgs = []
+            # snapshot flags before mutations
+            _um_old_flags = {
+                "is_approved": user.is_approved,
+                "allow_read": user.allow_read,
+                "allow_write": user.allow_write,
+                "allow_upload": user.allow_upload,
+                "is_admin": user.is_admin,
+            }
             # approval
             if user.is_approved and not user.id in is_approved:
                 user.is_approved = False
@@ -527,6 +551,29 @@ def handle_user_management(form):
                 )
                 # update database
                 update_user(user)
+                # fire hook for flag changes
+                _um_flag_names = [
+                    "is_approved",
+                    "allow_read",
+                    "allow_write",
+                    "allow_upload",
+                    "is_admin",
+                ]
+                _um_changes = [
+                    {
+                        "flag": f,
+                        "old": _um_old_flags[f],
+                        "new": getattr(user, f),
+                    }
+                    for f in _um_flag_names
+                    if _um_old_flags[f] != getattr(user, f)
+                ]
+                if _um_changes:
+                    plugin_manager.hook.user_flags_changed(
+                        user_email=user.email,
+                        changes=_um_changes,
+                        author=(current_user.name, current_user.email),
+                    )
                 # send notification mail
                 if user_was_just_approved:
                     send_approvement_mail(user)
@@ -701,6 +748,16 @@ def handle_user_edit(uid, form):
     user = get_user(uid)
     if not user or user.id is None:
         abort(404)
+    # snapshot flags before any mutations
+    _ue_flag_names = [
+        "email_confirmed",
+        "is_admin",
+        "is_approved",
+        "allow_read",
+        "allow_write",
+        "allow_upload",
+    ]
+    _ue_old_flags = {flag: getattr(user, flag) for flag in _ue_flag_names}
     msgs, flags = [], []
     # delete
     if form.get("delete", False):
@@ -767,6 +824,18 @@ def handle_user_edit(uid, form):
         )
     try:
         update_user(user)
+        # fire hook if any flags changed
+        _ue_changes = [
+            {"flag": f, "old": _ue_old_flags[f], "new": getattr(user, f)}
+            for f in _ue_flag_names
+            if _ue_old_flags[f] != getattr(user, f)
+        ]
+        if _ue_changes:
+            plugin_manager.hook.user_flags_changed(
+                user_email=user.email,
+                changes=_ue_changes,
+                author=(current_user.name, current_user.email),
+            )
         if user.is_approved and not user_was_already_approved:
             send_approvement_mail(user)
     except Exception as e:

@@ -302,6 +302,16 @@ class OtterWikiPluginSpec:
         """
 
     @hookspec
+    def permission_changed(
+        self, setting_name, old_value, new_value, author
+    ) -> None:
+        """Called after a permission setting has been changed via the admin UI."""
+
+    @hookspec
+    def user_flags_changed(self, user_email, changes, author) -> None:
+        """Called after a user's flags have been changed via the admin UI."""
+
+    @hookspec
     def info(
         self,
     ) -> Tuple[str, str, str] | None:
