@@ -228,13 +228,35 @@ class TestDashboardNavigation:
     ):
         """Dashboard link should not appear when PLATFORM_MODE=False."""
         app_with_user.config["PLATFORM_MODE"] = False
-        rv = admin_client.get("/Home", follow_redirects=True)
-        html = rv.data.decode()
-        soup = BeautifulSoup(html, "html.parser")
-        links = soup.find_all("a", href=lambda h: h and "/app/" in h)
-        assert not any(
-            "Dashboard" in link.get_text() for link in links
-        ), "Dashboard link should not be present when PLATFORM_MODE=False"
+        try:
+            rv = admin_client.get("/Home", follow_redirects=True)
+            html = rv.data.decode()
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all("a", href=lambda h: h and "/app/" in h)
+            assert not any(
+                "Dashboard" in link.get_text() for link in links
+            ), "Dashboard link should not be present when PLATFORM_MODE=False"
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_dashboard_link_uses_default_domain(
+        self, app_with_user, admin_client, monkeypatch
+    ):
+        """Dashboard link should default to robot.wtf when PLATFORM_DOMAIN is not set."""
+        monkeypatch.delenv("PLATFORM_DOMAIN", raising=False)
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            rv = admin_client.get("/Home", follow_redirects=True)
+            html = rv.data.decode()
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all(
+                "a", href=lambda h: h and "https://robot.wtf/app/" in h
+            )
+            assert (
+                len(links) > 0
+            ), "Dashboard link should point to https://robot.wtf/app/ by default"
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
 
     def test_dashboard_link_points_to_platform_domain(
         self, app_with_user, admin_client, monkeypatch
