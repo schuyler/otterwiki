@@ -204,6 +204,58 @@ class TestPlatformModeEnabled:
             db.session.commit()
 
 
+class TestDashboardNavigation:
+    """Tests for Dashboard link in wiki dropdown in PLATFORM_MODE."""
+
+    def test_dashboard_link_shown_in_platform_mode(
+        self, app_with_user, admin_client
+    ):
+        """Dashboard link should appear in the wiki dropdown when PLATFORM_MODE=True."""
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            rv = admin_client.get("/Home", follow_redirects=True)
+            html = rv.data.decode()
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all("a", href=lambda h: h and "/app/" in h)
+            assert any(
+                "Dashboard" in link.get_text() for link in links
+            ), "Dashboard link should be present in platform mode"
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_dashboard_link_hidden_without_platform_mode(
+        self, app_with_user, admin_client
+    ):
+        """Dashboard link should not appear when PLATFORM_MODE=False."""
+        app_with_user.config["PLATFORM_MODE"] = False
+        rv = admin_client.get("/Home", follow_redirects=True)
+        html = rv.data.decode()
+        soup = BeautifulSoup(html, "html.parser")
+        links = soup.find_all("a", href=lambda h: h and "/app/" in h)
+        assert not any(
+            "Dashboard" in link.get_text() for link in links
+        ), "Dashboard link should not be present when PLATFORM_MODE=False"
+
+    def test_dashboard_link_points_to_platform_domain(
+        self, app_with_user, admin_client, monkeypatch
+    ):
+        """Dashboard link href should use PLATFORM_DOMAIN env var when set."""
+        monkeypatch.setenv("PLATFORM_DOMAIN", "test.example.com")
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            rv = admin_client.get("/Home", follow_redirects=True)
+            html = rv.data.decode()
+            soup = BeautifulSoup(html, "html.parser")
+            links = soup.find_all(
+                "a", href=lambda h: h and "test.example.com/app/" in h
+            )
+            assert (
+                len(links) > 0
+            ), "Dashboard link should point to https://test.example.com/app/"
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+
 class TestPlatformModeRepomgmt:
     """Tests that repomgmt operations are suppressed in PLATFORM_MODE."""
 

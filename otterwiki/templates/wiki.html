@@ -46,6 +46,15 @@
 {% endblock %}
 
 {% block navbardropdown %}
+{% if config.PLATFORM_MODE %}
+                    <a href="https://{{ os_getenv('PLATFORM_DOMAIN', 'robot.wtf') }}/app/" class="dropdown-item-with-icon">
+                        <span class="dropdown-icon">
+                            <i class="fas fa-th-large"></i>
+                        </span>
+                    Dashboard
+                    </a>
+                    <div class="dropdown-divider mt-5 mb-5"></div>
+{% endif %}
 {% if has_permission('WRITE') and not "createpage" in config.SIDEBAR_SHORTCUTS.lower().split() %}
                     <a href="{{ url_for("create") }}" class="dropdown-item-with-icon" id="create-page-btn">
                         <span class="dropdown-icon">
