@@ -3,7 +3,6 @@
 """Tests for admin action hooks (permission_changed, user_flags_changed)."""
 
 import sys
-from datetime import datetime
 
 from otterwiki.plugins import hookimpl
 
@@ -202,6 +201,22 @@ def test_user_flags_changed_hook_fires_from_user_management(
         assert "another@user.org" in emails
     finally:
         _get_plugin_manager().unregister(recorder)
+        # Reset other_user to non-admin state
+        other_user = SimpleAuth.User.query.filter_by(
+            email="another@user.org"
+        ).first()
+        if other_user is not None and other_user.is_admin:
+            admin_client.post(
+                "/-/admin/user_management",
+                data={
+                    "is_approved": [1, other_user.id],
+                    "is_admin": [1],  # exclude other_user from admin list
+                    "allow_read": [other_user.id],
+                    "allow_write": [other_user.id],
+                    "allow_upload": [other_user.id],
+                },
+                follow_redirects=True,
+            )
 
 
 def test_user_flags_changed_hook_not_fired_when_unchanged(

@@ -305,11 +305,26 @@ class OtterWikiPluginSpec:
     def permission_changed(
         self, setting_name, old_value, new_value, author
     ) -> None:
-        """Called after a permission setting has been changed via the admin UI."""
+        """Called after an access-level setting has been changed via the admin UI.
+
+        Covers READ_ACCESS, WRITE_ACCESS, and ATTACHMENT_ACCESS.
+        Does not cover registration settings (DISABLE_REGISTRATION, etc.).
+
+        :param setting_name: One of "READ_ACCESS", "WRITE_ACCESS", "ATTACHMENT_ACCESS".
+        :param old_value: Previous value (e.g. "ANONYMOUS", "REGISTERED", "APPROVED").
+        :param new_value: New value.
+        :param author: Tuple of (name, email) of the admin who made the change.
+        """
 
     @hookspec
     def user_flags_changed(self, user_email, changes, author) -> None:
-        """Called after a user's flags have been changed via the admin UI."""
+        """Called after a user's flags have been changed via the admin UI.
+
+        :param user_email: Email address of the user whose flags changed.
+        :param changes: List of dicts, each with keys "flag" (str),
+            "old" (bool), and "new" (bool).
+        :param author: Tuple of (name, email) of the admin who made the change.
+        """
 
     @hookspec
     def info(
