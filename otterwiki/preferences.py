@@ -664,19 +664,30 @@ def handle_user_add(form):
     # update user from form
     user.name = form.get("name").strip()  # pyright: ignore
     user.email = form.get("email").strip()  # pyright: ignore
+    if (
+        app.config.get("PLATFORM_MODE")
+        and user.email
+        and "@" not in user.email
+    ):
+        user.email = "@" + user.email
 
-    for value, _ in [
-        ("email_confirmed", "email confirmed"),
-        ("is_admin", "admin"),
-        ("is_approved", "approved"),
-        ("allow_read", "read"),
-        ("allow_write", "write"),
-        ("allow_upload", "upload"),
-    ]:
-        if getattr(user, value) and not form.get(value):
-            setattr(user, value, False)
-        elif not getattr(user, value) and form.get(value):
-            setattr(user, value, True)
+    if app.config.get("PLATFORM_MODE") and form.get("role"):
+        role_flags = _role_to_flags(form.get("role"))
+        for flag_name, new_val in role_flags.items():
+            setattr(user, flag_name, new_val)
+    else:
+        for value, _ in [
+            ("email_confirmed", "email confirmed"),
+            ("is_admin", "admin"),
+            ("is_approved", "approved"),
+            ("allow_read", "read"),
+            ("allow_write", "write"),
+            ("allow_upload", "upload"),
+        ]:
+            if getattr(user, value) and not form.get(value):
+                setattr(user, value, False)
+            elif not getattr(user, value) and form.get(value):
+                setattr(user, value, True)
 
     error = []
     if empty(user.name):  # pyright: ignore
@@ -754,8 +765,10 @@ def handle_user_edit(uid, form):
         else:
             toast("User name must not be empty.", "danger")
     # email / handle
-    if user.email != form.get("email").strip():
-        new_email = form.get("email").strip()
+    new_email = form.get("email").strip()
+    if app.config.get("PLATFORM_MODE") and new_email and "@" not in new_email:
+        new_email = "@" + new_email
+    if user.email != new_email:
         if app.config.get("PLATFORM_MODE"):
             if not empty(new_email):
                 msgs.append(f"updated {user.email} to {new_email}")

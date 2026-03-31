@@ -420,3 +420,185 @@ class TestRoleDisplayMapping:
         assert role_select is None
         is_admin_cb = soup.find("input", {"name": "is_admin"})
         assert is_admin_cb is not None
+
+
+class TestAddUserRoleInPlatformMode:
+    """Bug 1: role dropdown is ignored when adding a new user in PLATFORM_MODE."""
+
+    def test_add_user_with_role_editor_sets_correct_flags(
+        self, app_with_user, admin_client
+    ):
+        """POST /-/user/ with role=editor should set editor permissions."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            admin_client.post(
+                "/-/user/",
+                data={
+                    "name": "Editor User",
+                    "email": "@editor.bsky.social",
+                    "role": "editor",
+                },
+                follow_redirects=True,
+            )
+            user = UserModel.query.filter_by(
+                email="@editor.bsky.social"
+            ).first()
+            assert user is not None
+            assert user.is_approved is True
+            assert user.allow_read is True
+            assert user.allow_write is True
+            assert user.allow_upload is True
+            assert user.is_admin is False
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_add_user_with_role_viewer_sets_correct_flags(
+        self, app_with_user, admin_client
+    ):
+        """POST /-/user/ with role=viewer should set viewer permissions."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            admin_client.post(
+                "/-/user/",
+                data={
+                    "name": "Viewer User",
+                    "email": "@viewer.bsky.social",
+                    "role": "viewer",
+                },
+                follow_redirects=True,
+            )
+            user = UserModel.query.filter_by(
+                email="@viewer.bsky.social"
+            ).first()
+            assert user is not None
+            assert user.is_approved is True
+            assert user.allow_read is True
+            assert user.allow_write is False
+            assert user.allow_upload is False
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_add_user_with_role_admin_sets_correct_flags(
+        self, app_with_user, admin_client
+    ):
+        """POST /-/user/ with role=admin should set admin permissions."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            admin_client.post(
+                "/-/user/",
+                data={
+                    "name": "Admin User",
+                    "email": "@admin.bsky.social",
+                    "role": "admin",
+                },
+                follow_redirects=True,
+            )
+            user = UserModel.query.filter_by(
+                email="@admin.bsky.social"
+            ).first()
+            assert user is not None
+            assert user.is_admin is True
+            assert user.is_approved is True
+            assert user.allow_read is True
+            assert user.allow_write is True
+            assert user.allow_upload is True
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+
+class TestHandleNormalizationInPlatformMode:
+    """Bug 2: email/handle should be normalized to @{handle} in PLATFORM_MODE."""
+
+    def test_add_user_handle_without_at_is_normalized(
+        self, app_with_user, admin_client
+    ):
+        """Adding a user with handle missing @ should store it with @ prefix."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            admin_client.post(
+                "/-/user/",
+                data={
+                    "name": "Alice",
+                    "email": "alice.bsky.social",
+                    "role": "viewer",
+                },
+                follow_redirects=True,
+            )
+            # Should NOT find the bare handle
+            bare = UserModel.query.filter_by(email="alice.bsky.social").first()
+            assert bare is None
+            # Should find the normalized handle
+            normalized = UserModel.query.filter_by(
+                email="@alice.bsky.social"
+            ).first()
+            assert normalized is not None
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_add_user_handle_with_at_is_unchanged(
+        self, app_with_user, admin_client
+    ):
+        """Adding a user with handle that already has @ should not double it."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            admin_client.post(
+                "/-/user/",
+                data={
+                    "name": "Bob",
+                    "email": "@bob.bsky.social",
+                    "role": "viewer",
+                },
+                follow_redirects=True,
+            )
+            user = UserModel.query.filter_by(email="@bob.bsky.social").first()
+            assert user is not None
+            # Must not have been double-prefixed
+            double = UserModel.query.filter_by(
+                email="@@bob.bsky.social"
+            ).first()
+            assert double is None
+        finally:
+            app_with_user.config["PLATFORM_MODE"] = False
+
+    def test_edit_user_handle_without_at_is_normalized(
+        self, app_with_user, admin_client
+    ):
+        """Editing a user's handle to a value without @ should normalize it."""
+        from otterwiki.models import User as UserModel
+
+        app_with_user.config["PLATFORM_MODE"] = True
+        try:
+            user = UserModel.query.filter_by(email="another@user.org").first()
+            assert user is not None
+            original_email = user.email
+            admin_client.post(
+                f"/-/user/{user.id}",
+                data={
+                    "name": user.name,
+                    "email": "new.handle.bsky.social",
+                    "role": "viewer",
+                },
+                follow_redirects=True,
+            )
+            updated = UserModel.query.filter_by(id=user.id).first()
+            assert updated is not None
+            assert updated.email == "@new.handle.bsky.social"
+        finally:
+            # Restore the email so other tests are unaffected
+            user = UserModel.query.filter_by(id=user.id).first()
+            if user is not None:
+                user.email = "another@user.org"
+                from otterwiki.server import db
+
+                db.session.commit()
+            app_with_user.config["PLATFORM_MODE"] = False
