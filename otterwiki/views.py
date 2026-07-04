@@ -258,6 +258,17 @@ def admin_content_and_editing():
 
 
 @app.route(
+    "/-/admin/git_access", methods=["POST", "GET"]
+)  # pyright: ignore -- false positive
+@login_required
+def admin_git_access():
+    if request.method == "GET":
+        return otterwiki.preferences.git_access_form()
+    else:
+        return otterwiki.preferences.handle_git_web_server(request.form)
+
+
+@app.route(
     "/-/admin/repository_management", methods=["POST", "GET"]
 )  # pyright: ignore -- false positive
 @login_required

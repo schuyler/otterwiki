@@ -263,7 +263,7 @@ def handle_repository_management(form):
         return repository_management_form(git_action_result)
 
     # Otherwise handle preference updates
-    _update_preference("GIT_WEB_SERVER", form.get("git_web_server", "False"))
+    set_git_web_server(form.get("git_web_server", "False") == "True")
 
     git_remote_push_enabled = form.get("git_remote_push_enabled") == "True"
 
@@ -589,6 +589,30 @@ def content_and_editing_form():
         "admin/content_and_editing.html",
         title="Content and Editing preferences",
     )
+
+
+def set_git_web_server(enabled: bool):
+    """Write the GIT_WEB_SERVER preference (caller must commit and reload)."""
+    _update_preference("GIT_WEB_SERVER", "True" if enabled else "False")
+
+
+def git_access_form():
+    if not has_permission("ADMIN"):
+        abort(403)
+    return render_template(
+        "admin/git_access.html",
+        title="Git Access",
+    )
+
+
+def handle_git_web_server(form):
+    if not has_permission("ADMIN"):
+        abort(403)
+    set_git_web_server(form.get("git_web_server") == "True")
+    db.session.commit()
+    update_app_config()
+    toast("Git Access preferences updated.")
+    return redirect(url_for("admin_git_access"))
 
 
 def repository_management_form(git_action_result=None):

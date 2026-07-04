@@ -42,6 +42,14 @@
     Repository Management
 </a>
 {% endif %}
+{% if config.PLATFORM_MODE %}
+<a href="{{ url_for("admin_git_access") }}" class="sidebar-link sidebar-link-with-icon">
+    <span class="sidebar-icon" style="min-width: 3rem;">
+        <i class="fas fa-code-branch"></i>
+    </span>
+    Git Access
+</a>
+{% endif %}
 <a href="{{ url_for("admin_permissions_and_registration") }}" class="sidebar-link sidebar-link-with-icon">
     <span class="sidebar-icon" style="min-width: 3rem;">
         <i class="fas fa-users-cog"></i>
