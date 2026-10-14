@@ -95,6 +95,13 @@ class TestURLNormalization:
         assert rv.status_code == 302
         assert "Test_Page" in rv.headers["Location"]
 
+    def test_api_paths_with_spaces_are_not_redirected(self, underscore_client):
+        """API clients don't follow redirects, so /api/ must be left alone."""
+        rv = underscore_client.get(
+            "/api/v1/pages/Test Page", follow_redirects=False
+        )
+        assert rv.status_code != 302
+
     def test_nested_view_with_spaces_redirects(self, underscore_client):
         self._create_page(underscore_client, "Design/Test_Page")
         rv = underscore_client.get("/Design/Test Page", follow_redirects=False)
