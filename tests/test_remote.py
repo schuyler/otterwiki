@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # vim: set et ts=8 sts=4 sw=4 ai
 
+import os
 import pytest
 from base64 import b64encode
 
@@ -238,3 +239,72 @@ def test_git_pack_auth_user(app_with_user):
     app_with_user.config["READ_ACCESS"] = "ANONYMOUS"
     app_with_user.config["WRITE_ACCESS"] = "ANONYMOUS"
     app_with_user.config["ATTACHMENT_ACCESS"] = "ANONYMOUS"
+
+
+def _config_writes(monkeypatch):
+    """Record the `git config` writes GitHttpServer makes (reads have --get)."""
+    import subprocess
+    import otterwiki.remote
+
+    writes = []
+    real_run = subprocess.run
+
+    def run(cmd, *args, **kwargs):
+        if cmd[:2] == ["git", "config"] and "--get" not in cmd:
+            writes.append(cmd)
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(otterwiki.remote.subprocess, "run", run)
+    return writes
+
+
+def test_githttpserver_writes_config_only_when_needed(create_app, monkeypatch):
+    import subprocess
+    from otterwiki.remote import GitHttpServer
+
+    path = create_app.config["REPOSITORY"]
+    config_file = os.path.join(path, ".git", "config")
+    subprocess.run(
+        ["git", "config", "--file", config_file, "--unset", "receive.denyCurrentBranch"]
+    )
+    writes = _config_writes(monkeypatch)
+
+    GitHttpServer(path=path)
+    assert len(writes) == 1
+    # every later construction (e.g. a tenant swap) only reads
+    GitHttpServer(path=path)
+    GitHttpServer(path=path)
+    assert len(writes) == 1
+    value = subprocess.run(
+        ["git", "config", "--file", config_file, "receive.denyCurrentBranch"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert value == "updateInstead"
+
+
+def test_githttpserver_lost_config_race_is_not_an_error(create_app, monkeypatch):
+    """If another worker set the value while we held no lock, don't log."""
+    import subprocess
+    import otterwiki.remote
+    from otterwiki.remote import GitHttpServer
+
+    path = create_app.config["REPOSITORY"]
+    config_file = os.path.join(path, ".git", "config")
+    subprocess.run(
+        ["git", "config", "--file", config_file, "--unset", "receive.denyCurrentBranch"]
+    )
+    real_run = subprocess.run
+
+    def run(cmd, *args, **kwargs):
+        if cmd[:2] == ["git", "config"] and "--get" not in cmd:
+            # the other worker wins, then our write fails on config.lock
+            real_run(cmd, *args, **kwargs)
+            return subprocess.CompletedProcess(cmd, 255, b"", b"could not lock")
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(otterwiki.remote.subprocess, "run", run)
+    errors = []
+    monkeypatch.setattr(otterwiki.remote.app.logger, "error", errors.append)
+    GitHttpServer(path=path)
+    assert errors == []

@@ -4,6 +4,8 @@
 import os
 import pathlib
 import re
+import threading
+from contextlib import contextmanager
 from datetime import datetime
 from typing import List, cast
 
@@ -28,6 +30,55 @@ try:
 except NameError:
     FileNotFoundError = IOError
 
+try:
+    import fcntl
+except ImportError:  # not available on Windows
+    fcntl = None
+
+WRITE_LOCK_FILENAME = "otterwiki-write.lock"
+
+# per-thread nesting depth of the write lock, keyed by repository path
+_write_lock_depth = threading.local()
+
+
+@contextmanager
+def repository_write_lock(path):
+    """
+    Hold an exclusive advisory lock on the repository at path while
+    mutating its index or working tree.
+
+    With more than one gunicorn worker, two requests can otherwise race
+    on .git/index.lock and one of them fails. The lock is a flock() on a
+    file of its own in .git/, so it serializes processes and threads alike
+    and is released by the kernel if the holder dies. It is reentrant
+    within a thread, so a locked method may call another one.
+    """
+    depth = getattr(_write_lock_depth, "paths", None)
+    if depth is None:
+        depth = _write_lock_depth.paths = {}
+    if fcntl is None or depth.get(path, 0) > 0:
+        depth[path] = depth.get(path, 0) + 1
+        try:
+            yield
+        finally:
+            depth[path] -= 1
+        return
+    fd = os.open(
+        os.path.join(path, ".git", WRITE_LOCK_FILENAME),
+        os.O_RDWR | os.O_CREAT,
+        0o664,
+    )
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        depth[path] = 1
+        try:
+            yield
+        finally:
+            depth[path] = 0
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
 
 class GitStorage(object):
     def __init__(self, path, initialize=False):
@@ -46,6 +97,9 @@ class GitStorage(object):
                     self.path
                 )
             )
+
+    def write_lock(self):
+        return repository_write_lock(self.path)
 
     def _check_reload(self):
         if os.path.exists(os.path.join(self.path, ".git/RELOAD_GIT")):
@@ -318,26 +372,27 @@ class GitStorage(object):
     ):
         if message is None:
             message = ""
-        dirname = os.path.dirname(filename)
-        if dirname != "":
-            os.makedirs(
-                os.path.join(self.path, dirname), mode=0o775, exist_ok=True
-            )
-        # store file on filesystem
-        encoding = None if "b" in mode else "utf-8"
-        with open(
-            os.path.join(self.path, filename), mode, encoding=encoding
-        ) as f:
-            f.write(content)
-        # check if file has changed
-        diff = self.repo.index.diff(None, paths=filename)
-        if len(diff) == 0 and filename not in self.repo.untracked_files:
-            return False
-        # add and commit to git
-        index = self.repo.index
-        index.add([filename])
-        actor = git.Actor(author[0], author[1])
-        index.commit(message, author=actor)
+        with self.write_lock():
+            dirname = os.path.dirname(filename)
+            if dirname != "":
+                os.makedirs(
+                    os.path.join(self.path, dirname), mode=0o775, exist_ok=True
+                )
+            # store file on filesystem
+            encoding = None if "b" in mode else "utf-8"
+            with open(
+                os.path.join(self.path, filename), mode, encoding=encoding
+            ) as f:
+                f.write(content)
+            # check if file has changed
+            diff = self.repo.index.diff(None, paths=filename)
+            if len(diff) == 0 and filename not in self.repo.untracked_files:
+                return False
+            # add and commit to git
+            index = self.repo.index
+            index.add([filename])
+            actor = git.Actor(author[0], author[1])
+            index.commit(message, author=actor)
 
         plugin_manager.hook.repository_changed(changed_files=[filename])
 
@@ -349,17 +404,18 @@ class GitStorage(object):
         return True
 
     def commit(self, filenames, message="", author=("", ""), no_add=False):
-        index = self.repo.index
-        # add and commit to git
-        if no_add == False:
-            try:
-                index.add(filenames)
-            except Exception:
-                raise StorageError(
-                    "index.add {} in commit failed.".format(filenames)
-                )
-        actor = git.Actor(author[0], author[1])
-        index.commit(message, author=actor)
+        with self.write_lock():
+            index = self.repo.index
+            # add and commit to git
+            if no_add == False:
+                try:
+                    index.add(filenames)
+                except Exception:
+                    raise StorageError(
+                        "index.add {} in commit failed.".format(filenames)
+                    )
+            actor = git.Actor(author[0], author[1])
+            index.commit(message, author=actor)
 
         changed_list = (
             filenames if isinstance(filenames, list) else [filenames]
@@ -373,17 +429,17 @@ class GitStorage(object):
 
     def revert(self, revision, message="", author=("", "")):
         actor = git.Actor(author[0], author[1])
-        try:
-            self.repo.git.revert(revision, "--no-commit")
-        except git.exc.GitCommandError:
+        with self.write_lock():
             try:
-                self.repo.git.revert("--abort")
+                self.repo.git.revert(revision, "--no-commit")
             except git.exc.GitCommandError:
-                pass
-            raise StorageError("Revert failed.")
+                try:
+                    self.repo.git.revert("--abort")
+                except git.exc.GitCommandError:
+                    pass
+                raise StorageError("Revert failed.")
 
-        actor = git.Actor(author[0], author[1])
-        commit = self.repo.index.commit(message, author=actor)
+            commit = self.repo.index.commit(message, author=actor)
 
         changed_files = list(commit.stats.files.keys())
         plugin_manager.hook.repository_changed(changed_files=changed_files)
@@ -400,30 +456,31 @@ class GitStorage(object):
     def delete(self, filename, message=None, author=("", "")):
         if not type(filename) == list:
             filename = [filename]
-        # make sure we only try to delete what exists
-        filename_remove = [
-            f for f in filename if self.exists(f) and not self.isdir(f)
-        ]
-        filename_remove += [
-            d
-            for d in filename
-            if self.exists(d) and self.isdir(d) and not self.isemptydir(d)
-        ]
-        # remove empty directories via os
-        empty_dirs = [
-            d
-            for d in filename
-            if self.exists(d) and self.isdir(d) and self.isemptydir(d)
-        ]
-        for dirname in empty_dirs:
-            os.rmdir(os.path.join(self.path, dirname))
+        with self.write_lock():
+            # make sure we only try to delete what exists
+            filename_remove = [
+                f for f in filename if self.exists(f) and not self.isdir(f)
+            ]
+            filename_remove += [
+                d
+                for d in filename
+                if self.exists(d) and self.isdir(d) and not self.isemptydir(d)
+            ]
+            # remove empty directories via os
+            empty_dirs = [
+                d
+                for d in filename
+                if self.exists(d) and self.isdir(d) and self.isemptydir(d)
+            ]
+            for dirname in empty_dirs:
+                os.rmdir(os.path.join(self.path, dirname))
 
-        # or this will raise an exception
-        self.repo.index.remove(filename_remove, working_tree=True, r=True)
-        actor = git.Actor(author[0], author[1])
-        if message is None:
-            message = "Deleted {}.".format(filename_remove)
-        self.repo.index.commit(message, author=actor)
+            # or this will raise an exception
+            self.repo.index.remove(filename_remove, working_tree=True, r=True)
+            actor = git.Actor(author[0], author[1])
+            if message is None:
+                message = "Deleted {}.".format(filename_remove)
+            self.repo.index.commit(message, author=actor)
 
         plugin_manager.hook.repository_changed(changed_files=filename_remove)
 
@@ -440,28 +497,29 @@ class GitStorage(object):
         author=None,
         no_commit=False,
     ):
-        if self.exists(new_filename):
-            raise StorageError(
-                f'The filename "{new_filename}" already exist. Please choose a new filename.'
-            )
-        # make sure the target directory exists
-        dirname = os.path.dirname(new_filename)
-        if dirname != "":
-            os.makedirs(
-                os.path.join(self.path, dirname), mode=0o775, exist_ok=True
-            )
-        try:
-            self.repo.git.mv(old_filename, new_filename)
-        except Exception as e:
-            raise StorageError(
-                "Renaming {} to {} failed: {}.".format(
-                    old_filename, new_filename, e
+        with self.write_lock():
+            if self.exists(new_filename):
+                raise StorageError(
+                    f'The filename "{new_filename}" already exist. Please choose a new filename.'
                 )
-            )
-        if message is None:
-            message = "{} renamed to {}.".format(old_filename, new_filename)
-        if not no_commit:
-            self.commit([new_filename], message, author, no_add=True)
+            # make sure the target directory exists
+            dirname = os.path.dirname(new_filename)
+            if dirname != "":
+                os.makedirs(
+                    os.path.join(self.path, dirname), mode=0o775, exist_ok=True
+                )
+            try:
+                self.repo.git.mv(old_filename, new_filename)
+            except Exception as e:
+                raise StorageError(
+                    "Renaming {} to {} failed: {}.".format(
+                        old_filename, new_filename, e
+                    )
+                )
+            if message is None:
+                message = "{} renamed to {}.".format(old_filename, new_filename)
+            if not no_commit:
+                self.commit([new_filename], message, author, no_add=True)
 
     def list(self, p=None, depth=None, exclude=[]):
         excludes = [".git"] + exclude

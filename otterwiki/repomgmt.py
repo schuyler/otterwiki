@@ -192,7 +192,10 @@ class RepositoryManager:
                 app.logger.info(
                     f"[RepositoryManager] Pulling from remote: {remote_url}"
                 )
-                result = self.storage.repo.git.pull(remote_url, current_branch)
+                with self.storage.write_lock():
+                    result = self.storage.repo.git.pull(
+                        remote_url, current_branch
+                    )
                 if result:
                     app.logger.info(
                         f"[RepositoryManager] Pull result: {result}"

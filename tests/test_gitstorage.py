@@ -449,3 +449,60 @@ def test_get_parent_revision(storage):
         filename=filename1, revision=revision3
     )
     assert parent_revision == revision1
+
+
+def _hold_write_lock(storage):
+    """Take the write lock the way another worker process would."""
+    import fcntl
+
+    fd = os.open(
+        os.path.join(storage.path, ".git", gitstorage.WRITE_LOCK_FILENAME),
+        os.O_RDWR | os.O_CREAT,
+    )
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
+
+
+@pytest.mark.skipif(gitstorage.fcntl is None, reason="needs fcntl")
+def test_store_waits_for_write_lock(storage):
+    import fcntl
+    import threading
+
+    fd = _hold_write_lock(storage)
+    writer = threading.Thread(
+        target=storage.store,
+        args=("locked.md",),
+        kwargs={"content": "x", "author": ("A", "a@example.com")},
+    )
+    try:
+        writer.start()
+        writer.join(timeout=0.5)
+        assert writer.is_alive(), "store() did not wait for the write lock"
+        assert not storage.exists("locked.md")
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+    writer.join(timeout=10)
+    assert not writer.is_alive()
+    assert storage.load("locked.md") == "x"
+    assert storage.log("locked.md")
+
+
+def test_write_lock_is_reentrant(storage):
+    author = ("A", "a@example.com")
+    with storage.write_lock():
+        assert storage.store("one.md", content="1", author=author)
+        storage.rename("one.md", "two.md", author=author)
+    assert storage.load("two.md") == "1"
+    # released: another holder can take it without blocking
+    if gitstorage.fcntl is not None:
+        import fcntl
+
+        fd = os.open(
+            os.path.join(storage.path, ".git", gitstorage.WRITE_LOCK_FILENAME),
+            os.O_RDWR,
+        )
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        finally:
+            os.close(fd)

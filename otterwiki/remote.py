@@ -1,12 +1,14 @@
 #!/env/bin/python
 # vim: set et ts=8 sts=4 sw=4 ai:
 
+import contextlib
 import subprocess
 import os
 
 from flask import request, abort, make_response, Response
 from otterwiki.server import app
 from otterwiki.auth import current_user, has_permission, check_credentials
+from otterwiki.gitstorage import repository_write_lock
 
 
 class GitHttpServer:
@@ -14,16 +16,28 @@ class GitHttpServer:
         self.path = path
         # configure git to allow pushing into the current branch
         # of the non-bare repository, see https://git-scm.com/docs/git-config#Documentation/git-config.txt-receivedenyCurrentBranch
-        config_command = [
-            "git",
-            "config",
-            "--file",
-            os.path.join(self.path, ".git", "config"),
-            "receive.denyCurrentBranch",
-            "updateInstead",
-        ]
+        self._ensure_config("receive.denyCurrentBranch", "updateInstead")
+
+    def _ensure_config(self, key: str, value: str):
+        # This runs on every construction, which in a multi-tenant setup is
+        # every tenant swap. Read first: reads take no lock, so concurrent
+        # workers only contend on config.lock the first time. If a write
+        # still loses that race, the winner has set the same value.
+        config_file = os.path.join(self.path, ".git", "config")
+
+        def current():
+            p = subprocess.run(
+                ["git", "config", "--file", config_file, "--get", key],
+                capture_output=True,
+                text=True,
+            )
+            return p.stdout.strip() if p.returncode == 0 else None
+
+        if current() == value:
+            return
+        config_command = ["git", "config", "--file", config_file, key, value]
         p = subprocess.run(config_command, capture_output=True)
-        if p.returncode > 0:
+        if p.returncode > 0 and current() != value:
             app.logger.error(
                 f"GitHttpServer failed: {config_command} with \"{p.stderr}\""
             )
@@ -107,13 +121,22 @@ class GitHttpServer:
 
     def git_pack(self, service, stream):
         command = [f"git-{service}-pack", "--stateless-rpc", self.path]
-        p = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        data = stream.read()
+        # receive-pack updates the checked-out branch (updateInstead),
+        # so it must not run alongside a commit from the web or the API.
+        lock = (
+            repository_write_lock(self.path)
+            if service == "receive"
+            else contextlib.nullcontext()
         )
-        stdout, stderr = p.communicate(stream.read())
+        with lock:
+            p = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            stdout, stderr = p.communicate(data)
         if p.returncode > 0:
             app.logger.error(
                 f"GitHttpServer failed: {command} with \"{stderr}\""
